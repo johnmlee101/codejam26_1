@@ -749,7 +749,7 @@
       ctx.save();
       ctx.globalAlpha = Math.max(0.3, 1 - correctedDist / 12) * pulseIntensity;
       ctx.shadowColor = '#f00';
-      ctx.shadowBlur = 15 + pulseIntensity * 10;
+      ctx.shadowBlur = isTouchDevice ? 0 : (15 + pulseIntensity * 10);
       ctx.strokeStyle = '#f00';
       ctx.lineWidth = 3;
 
@@ -1114,18 +1114,28 @@
       sourceNode.start();
     }
 
+    var lastSentVolume = -1;
+
     function updateAudio() {
       if (!state || !state.running || !state.enemy.active) {
-        sendToShell({ type: 'setVolume', value: VOLUME_MINIMUM });
+        if (lastSentVolume !== VOLUME_MINIMUM) {
+          sendToShell({ type: 'setVolume', value: VOLUME_MINIMUM });
+          lastSentVolume = VOLUME_MINIMUM;
+        }
         return;
       }
-      var player = state.player, enemy = state.enemy;
-      var deltaX = enemy.x - player.x, deltaY = enemy.y - player.y;
+      var player = state.player;
+      var enemy = state.enemy;
+      var deltaX = enemy.x - player.x;
+      var deltaY = enemy.y - player.y;
       var distanceToEnemy = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
       var proximity = Math.max(0, 1 - distanceToEnemy / VOLUME_HEARING_RANGE);
       var volumeCurve = Math.pow(proximity, VOLUME_FALLOFF_CURVE);
-      var volume = VOLUME_MINIMUM + volumeCurve * (VOLUME_MAXIMUM - VOLUME_MINIMUM);
-      sendToShell({ type: 'setVolume', value: volume });
+      var volume = Math.round((VOLUME_MINIMUM + volumeCurve * (VOLUME_MAXIMUM - VOLUME_MINIMUM)) * 100) / 100;
+      if (volume !== lastSentVolume) {
+        sendToShell({ type: 'setVolume', value: volume });
+        lastSentVolume = volume;
+      }
     }
 
     // ============================================================
@@ -1135,21 +1145,30 @@
     // (hue-rotate, saturate, brightness) create a glitch effect.
     // Resets to normal when the enemy is far away or on win.
     // ============================================================
+    var lastSentPlaybackRate = -1;
+
     function updateVideoEffects() {
       if (!state || !state.running) return;
-      var enemy = state.enemy, player = state.player;
+      var enemy = state.enemy;
+      var player = state.player;
       if (!enemy.active) {
-        sendToShell({ type: 'setVideoFilter', value: 'none' });
+        if (lastSentPlaybackRate !== 1) {
+          sendToShell({ type: 'setPlaybackRate', value: 1 });
+          lastSentPlaybackRate = 1;
+        }
         return;
       }
-      var deltaX = enemy.x - player.x, deltaY = enemy.y - player.y;
+      var deltaX = enemy.x - player.x;
+      var deltaY = enemy.y - player.y;
       var distanceToEnemy = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
       var proximity = Math.max(0, 1 - distanceToEnemy / 8);
 
       // Slow down video as enemy gets closer
-      sendToShell({ type: 'setPlaybackRate', value: Math.max(0.2, 1.0 - proximity * 0.8) });
-
-      sendToShell({ type: 'setVideoFilter', value: 'none' });
+      var playbackRate = Math.round(Math.max(0.2, 1.0 - proximity * 0.8) * 100) / 100;
+      if (playbackRate !== lastSentPlaybackRate) {
+        sendToShell({ type: 'setPlaybackRate', value: playbackRate });
+        lastSentPlaybackRate = playbackRate;
+      }
     }
 
     // ============================================================
