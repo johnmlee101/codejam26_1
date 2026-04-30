@@ -1163,11 +1163,13 @@
       var distanceToEnemy = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
       var proximity = Math.max(0, 1 - distanceToEnemy / 8);
 
-      // Slow down video as enemy gets closer
-      var playbackRate = Math.round(Math.max(0.2, 1.0 - proximity * 0.8) * 100) / 100;
-      if (playbackRate !== lastSentPlaybackRate) {
-        sendToShell({ type: 'setPlaybackRate', value: playbackRate });
-        lastSentPlaybackRate = playbackRate;
+      // Slow down video as enemy gets closer (skip on mobile for performance)
+      if (!isTouchDevice) {
+        var playbackRate = Math.round(Math.max(0.2, 1.0 - proximity * 0.8) * 100) / 100;
+        if (playbackRate !== lastSentPlaybackRate) {
+          sendToShell({ type: 'setPlaybackRate', value: playbackRate });
+          lastSentPlaybackRate = playbackRate;
+        }
       }
     }
 
