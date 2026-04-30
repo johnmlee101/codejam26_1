@@ -1370,6 +1370,8 @@
       gameOverlay.classList.add('hidden');
       if (!audioContext) initAudio();
       else audioContext.resume();
+      // Ensure the parent video keeps playing (important on mobile)
+      sendToShell({ type: 'play' });
     }
 
     var debugMode = false;
