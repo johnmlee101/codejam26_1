@@ -71,6 +71,8 @@
       border-radius: 8px;
     }
 
+    #version-tag { display: none; }
+
     /* Mobile touch controls — hidden on desktop, shown on touch devices */
     #mobile-time { display: none; }
     #touch-controls { display: none; }
@@ -125,6 +127,17 @@
         text-shadow: 0 0 4px #000;
         z-index: 9;
       }
+      #version-tag {
+        display: block;
+        position: absolute;
+        bottom: 2px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: rgba(255,255,255,0.7);
+        font-size: 8px;
+        pointer-events: none;
+        z-index: 9;
+      }
       /* Hide main HUD on mobile — time is shown below controls */
       #hud { display: none; }
       #game-overlay h1 { font-size: 22px; }
@@ -148,6 +161,7 @@
       <div id="touch-left" class="touch-btn" data-key="a">&#9664;</div>
       <div id="touch-right" class="touch-btn" data-key="d">&#9654;</div>
     </div>
+    <div id="version-tag">v4</div>
     <div id="game-overlay">
       <div class="text-backdrop">
         <h1>Looking to skip the ad?</h1>
