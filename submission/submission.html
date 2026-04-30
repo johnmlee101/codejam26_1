@@ -56,6 +56,64 @@
     #game-overlay.hidden { display: none; }
     #game-overlay h1 { font-size: 36px; margin: 0 0 6px 0; }
     #game-overlay .sub { font-size: 13px; color: #aaa; margin-bottom: 20px; }
+
+    /* Mobile touch controls — hidden on desktop, shown on touch devices */
+    #mobile-time { display: none; }
+    #touch-controls { display: none; }
+    @media (pointer: coarse) {
+      #touch-controls {
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        pointer-events: none;
+        z-index: 8;
+      }
+      #touch-controls .touch-btn {
+        position: absolute;
+        pointer-events: auto;
+        width: 52px;
+        height: 52px;
+        background: rgba(255,255,255,0.12);
+        border: 1px solid rgba(255,255,255,0.25);
+        border-radius: 8px;
+        color: rgba(255,255,255,0.6);
+        font-size: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        user-select: none;
+        -webkit-user-select: none;
+        touch-action: none;
+      }
+      #touch-controls .touch-btn:active,
+      #touch-controls .touch-btn.active {
+        background: rgba(255,255,255,0.3);
+        border-color: rgba(255,255,255,0.5);
+      }
+      /* D-pad: bottom-center */
+      #touch-fwd    { left: 50%; margin-left: -26px; bottom: 120px; }
+      #touch-back   { left: 50%; margin-left: -26px; bottom: 10px; }
+      #touch-left   { left: 50%; margin-left: -84px; bottom: 65px; }
+      #touch-right  { left: 50%; margin-left: 32px;  bottom: 65px; }
+      #mobile-time {
+        display: block;
+        position: absolute;
+        bottom: 4px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: #fff;
+        font-size: 11px;
+        text-align: center;
+        pointer-events: none;
+        text-shadow: 0 0 4px #000;
+        z-index: 9;
+      }
+      /* Hide main HUD on mobile — time is shown below controls */
+      #hud { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -63,10 +121,17 @@
     <canvas id="gameCanvas" width="640" height="480"></canvas>
     <canvas id="minimap" width="140" height="140"></canvas>
     <div id="hud"></div>
+    <div id="mobile-time"></div>
+    <div id="touch-controls">
+      <div id="touch-fwd" class="touch-btn" data-key="w">&#9650;</div>
+      <div id="touch-back" class="touch-btn" data-key="s">&#9660;</div>
+      <div id="touch-left" class="touch-btn" data-key="a">&#9664;</div>
+      <div id="touch-right" class="touch-btn" data-key="d">&#9654;</div>
+    </div>
     <div id="game-overlay">
       <h1>Looking to skip the ad?</h1>
       <div class="sub">Click to begin navigating to the skip.</div>
-      <div class="sub" style="margin-top:10px;font-size:11px;color:#666">Navigate the maze to skip. WASD / Arrows to move, Q/E strafe</div>
+      <div class="sub" style="margin-top:10px;font-size:11px;color:#666">Navigate the maze to skip.</div>
     </div>
   </div>
 
@@ -145,6 +210,8 @@
     var minimapCtx = minimapCanvas.getContext('2d');
     var hud = document.getElementById('hud');
     var gameOverlay = document.getElementById('game-overlay');
+    var mobileTimeDisplay = document.getElementById('mobile-time');
+    var isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
 
     // ============================================================
     // MAZE GENERATION
@@ -1090,12 +1157,20 @@
         }
       }
 
-      var hudText = '<span style="color:#aaa;font-size:11px">WASD/Arrows: move | Q/E: strafe</span><br>';
+      var hudText = '';
+      if (!isTouchDevice) {
+        hudText += '<span style="color:#aaa;font-size:11px">WASD/Arrows: move | Q/E: strafe</span><br>';
+      }
       if (debugMode) {
         hudText += '<span style="color:#0f0">Skip: ' + distanceToExit.toFixed(1) + 'm</span> | ';
       }
       hudText += '<span style="color:#f88">Time: ' + state.elapsed.toFixed(1) + 's</span>';
       hud.innerHTML = warning + hudText;
+
+      // On mobile, show time below the controls
+      if (isTouchDevice && mobileTimeDisplay) {
+        mobileTimeDisplay.innerHTML = '<span style="color:#f88">Time: ' + state.elapsed.toFixed(1) + 's</span>';
+      }
     }
 
     // ============================================================
@@ -1146,6 +1221,81 @@
     });
 
     // ============================================================
+    // MOBILE TOUCH CONTROLS
+    // Maps touch events on on-screen buttons to the same key state
+    // used by keyboard input. Supports multi-touch so you can hold
+    // forward while turning. Only visible on touch devices via CSS.
+    // ============================================================
+    var touchButtons = document.querySelectorAll('.touch-btn');
+    var activeTouches = {};
+
+    function handleTouchStart(event) {
+      event.preventDefault();
+      for (var touchIdx = 0; touchIdx < event.changedTouches.length; touchIdx++) {
+        var touch = event.changedTouches[touchIdx];
+        var button = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (button && button.dataset && button.dataset.key && state) {
+          activeTouches[touch.identifier] = button.dataset.key;
+          state.keys[button.dataset.key] = true;
+          button.classList.add('active');
+        }
+      }
+    }
+
+    function handleTouchEnd(event) {
+      event.preventDefault();
+      for (var touchIdx = 0; touchIdx < event.changedTouches.length; touchIdx++) {
+        var touch = event.changedTouches[touchIdx];
+        var mappedKey = activeTouches[touch.identifier];
+        if (mappedKey && state) {
+          state.keys[mappedKey] = false;
+          // Remove active class from the button with this key
+          for (var btnIdx = 0; btnIdx < touchButtons.length; btnIdx++) {
+            if (touchButtons[btnIdx].dataset.key === mappedKey) {
+              touchButtons[btnIdx].classList.remove('active');
+            }
+          }
+          delete activeTouches[touch.identifier];
+        }
+      }
+    }
+
+    function handleTouchMove(event) {
+      event.preventDefault();
+      for (var touchIdx = 0; touchIdx < event.changedTouches.length; touchIdx++) {
+        var touch = event.changedTouches[touchIdx];
+        var currentButton = document.elementFromPoint(touch.clientX, touch.clientY);
+        var previousKey = activeTouches[touch.identifier];
+        var currentKey = (currentButton && currentButton.dataset) ? currentButton.dataset.key : null;
+
+        if (previousKey !== currentKey) {
+          // Release old button
+          if (previousKey && state) {
+            state.keys[previousKey] = false;
+            for (var btnIdx = 0; btnIdx < touchButtons.length; btnIdx++) {
+              if (touchButtons[btnIdx].dataset.key === previousKey) {
+                touchButtons[btnIdx].classList.remove('active');
+              }
+            }
+          }
+          // Press new button
+          if (currentKey && state) {
+            activeTouches[touch.identifier] = currentKey;
+            state.keys[currentKey] = true;
+            currentButton.classList.add('active');
+          } else {
+            delete activeTouches[touch.identifier];
+          }
+        }
+      }
+    }
+
+    document.getElementById('touch-controls').addEventListener('touchstart', handleTouchStart, { passive: false });
+    document.getElementById('touch-controls').addEventListener('touchend', handleTouchEnd, { passive: false });
+    document.getElementById('touch-controls').addEventListener('touchcancel', handleTouchEnd, { passive: false });
+    document.getElementById('touch-controls').addEventListener('touchmove', handleTouchMove, { passive: false });
+
+    // ============================================================
     // PAUSE ON FOCUS LOSS
     // Pauses the game and the parent video when the iframe loses
     // focus or the mouse leaves the game area. Shows a "PAUSED"
@@ -1177,10 +1327,6 @@
     window.addEventListener('blur', pauseGame);
     document.addEventListener('mouseleave', pauseGame);
 
-    document.addEventListener('click', function() {
-      if (paused) resumeGame();
-    });
-
     // ============================================================
     // SHELL MESSAGES
     // Listens for postMessage events from the parent game shell.
@@ -1201,16 +1347,28 @@
 
     var debugMode = false;
 
-    // Require mouse click inside the iframe to start
-    // Cmd/Ctrl + Shift + Click = debug mode
-    document.addEventListener('click', function(e) {
+    // Require click/tap inside the iframe to start
+    // Cmd/Ctrl + Shift + Click = debug mode (desktop only)
+    function handleStartInteraction(event) {
       if (!adReady) return;
       if (!state || !state.running) {
-        debugMode = (e.metaKey || e.ctrlKey) && e.shiftKey;
+        debugMode = event.metaKey && event.shiftKey;
         minimapCanvas.style.display = debugMode ? 'block' : 'none';
       }
       startMaze();
+    }
+
+    document.addEventListener('click', function(event) {
+      if (paused) { resumeGame(); return; }
+      handleStartInteraction(event);
     });
+
+    // Touch support for starting/resuming on mobile
+    gameOverlay.addEventListener('touchstart', function(event) {
+      event.preventDefault();
+      if (paused) { resumeGame(); return; }
+      handleStartInteraction(event);
+    }, { passive: false });
 
     window.addEventListener('message', function(event) {
       if (!event.data || !event.data.type) return;
