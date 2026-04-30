@@ -192,12 +192,15 @@
       var grid = [];
       for (var gridY = 0; gridY < gridHeight; gridY++) {
         grid[gridY] = [];
-        for (var gridX = 0; gridX < gridWidth; gridX++) grid[gridY][gridX] = 1;
+        for (var gridX = 0; gridX < gridWidth; gridX++) {
+          grid[gridY][gridX] = 1;
+        }
       }
       for (var cellY = 0; cellY < mazeRows; cellY++) {
         for (var cellX = 0; cellX < mazeCols; cellX++) {
           var cell = getCell(cellX, cellY);
-          var tileX = cellX * 2 + 1, tileY = cellY * 2 + 1;
+          var tileX = cellX * 2 + 1;
+          var tileY = cellY * 2 + 1;
           grid[tileY][tileX] = 0;
           if (!cell.walls[0]) grid[tileY - 1][tileX] = 0;
           if (!cell.walls[1]) grid[tileY][tileX + 1] = 0;
@@ -300,7 +303,9 @@
 
     function initGame() {
       var maze = generateMaze(mazeGridSize, mazeGridSize);
-      var grid = maze.grid, gridWidth = maze.gridW, gridHeight = maze.gridH;
+      var grid = maze.grid;
+      var gridWidth = maze.gridW;
+      var gridHeight = maze.gridH;
 
       // Find an open direction for the player to face at spawn
       var spawnDirections = [
@@ -393,10 +398,13 @@
     // of the player). Returns an array of waypoint coordinates.
     // ============================================================
     function findPath(grid, sourceX, sourceY, goalX, goalY) {
-      var startTileX = Math.floor(sourceX), startTileY = Math.floor(sourceY);
-      var endTileX = Math.floor(goalX), endTileY = Math.floor(goalY);
+      var startTileX = Math.floor(sourceX);
+      var startTileY = Math.floor(sourceY);
+      var endTileX = Math.floor(goalX);
+      var endTileY = Math.floor(goalY);
       if (startTileX === endTileX && startTileY === endTileY) return [];
-      var gridRows = grid.length, gridCols = grid[0].length;
+      var gridRows = grid.length;
+      var gridCols = grid[0].length;
       var visited = {};
       var queue = [{ x: startTileX, y: startTileY, path: [] }];
       visited[startTileX + ',' + startTileY] = true;
@@ -426,14 +434,27 @@
     // which side was hit (for shading), and texture coordinate.
     // ============================================================
     function castRayDDA(originX, originY, angle, grid) {
-      var rayDirX = Math.cos(angle), rayDirY = Math.sin(angle);
-      var currentTileX = Math.floor(originX), currentTileY = Math.floor(originY);
-      var deltaDistX = Math.abs(1 / rayDirX), deltaDistY = Math.abs(1 / rayDirY);
+      var rayDirX = Math.cos(angle);
+      var rayDirY = Math.sin(angle);
+      var currentTileX = Math.floor(originX);
+      var currentTileY = Math.floor(originY);
+      var deltaDistX = Math.abs(1 / rayDirX);
+      var deltaDistY = Math.abs(1 / rayDirY);
       var stepX, stepY, sideDistX, sideDistY;
-      if (rayDirX < 0) { stepX = -1; sideDistX = (originX - currentTileX) * deltaDistX; }
-      else { stepX = 1; sideDistX = (currentTileX + 1 - originX) * deltaDistX; }
-      if (rayDirY < 0) { stepY = -1; sideDistY = (originY - currentTileY) * deltaDistY; }
-      else { stepY = 1; sideDistY = (currentTileY + 1 - originY) * deltaDistY; }
+      if (rayDirX < 0) {
+        stepX = -1;
+        sideDistX = (originX - currentTileX) * deltaDistX;
+      } else {
+        stepX = 1;
+        sideDistX = (currentTileX + 1 - originX) * deltaDistX;
+      }
+      if (rayDirY < 0) {
+        stepY = -1;
+        sideDistY = (originY - currentTileY) * deltaDistY;
+      } else {
+        stepY = 1;
+        sideDistY = (currentTileY + 1 - originY) * deltaDistY;
+      }
       var wallSide = 0;
       for (var step = 0; step < 200; step++) {
         if (sideDistX < sideDistY) {
@@ -466,12 +487,13 @@
     // textures, teleporter/exit sprites, and the enemy cutout.
     // The enemy is rendered by cutting a hole in the canvas with
     // destination-out compositing, letting the parent shell's
-    // video show through — the ad itself becomes the enemy.
+    // video show through - the ad itself becomes the enemy.
     // ============================================================
     var enemyScreenInfo = null;
 
     function render() {
-      var screenWidth = canvas.width, screenHeight = canvas.height;
+      var screenWidth = canvas.width;
+      var screenHeight = canvas.height;
       enemyScreenInfo = null;
 
       // Ceiling - office drop ceiling tiles
@@ -512,7 +534,10 @@
       ctx.fillStyle = floorGradient;
       ctx.fillRect(0, screenHeight / 2, screenWidth, screenHeight / 2);
 
-      var player = state.player, grid = state.grid, enemy = state.enemy, exitPos = state.exit;
+      var player = state.player;
+      var grid = state.grid;
+      var enemy = state.enemy;
+      var exitPos = state.exit;
       var halfFieldOfView = CONFIG.fieldOfView / 2;
       var stripWidth = screenWidth / CONFIG.rayCount;
       var zBuffer = [];
@@ -792,7 +817,7 @@
     // Uses BFS pathfinding to chase the player. When close (<5
     // tiles), targets a point in front of the player's face to
     // block their view. Speed varies: slower on corners, faster
-    // on long straights. Acts as a wall — pushes the player back
+    // on long straights. Acts as a wall - pushes the player back
     // on contact without clipping them into walls.
     // ============================================================
     function updateEnemy(deltaTime) {
@@ -824,7 +849,7 @@
         enemy.pathRecalcTimer = 0.5;
       }
 
-      // Follow the path — faster on straights, slower on corners
+      // Follow the path - faster on straights, slower on corners
       if (enemy.path.length > 0 && enemy.pathIndex < enemy.path.length) {
         var waypoint = enemy.path[enemy.pathIndex];
         var deltaX = waypoint.x - enemy.x, deltaY = waypoint.y - enemy.y;
@@ -858,7 +883,8 @@
       // Enemy contact: either fail the ad or push the player back
       var contactDeltaX = enemy.x - player.x, contactDeltaY = enemy.y - player.y;
       var contactDistance = Math.sqrt(contactDeltaX * contactDeltaX + contactDeltaY * contactDeltaY);
-      var blockRadius = 0.5, collisionMargin = 0.15;
+      var blockRadius = 0.5;
+      var collisionMargin = 0.15;
       if (contactDistance < blockRadius && contactDistance > 0.001) {
         if (ENEMY_CONTACT_FAILS) {
           state.running = false;
@@ -889,9 +915,13 @@
     // when the player reaches the exit marker.
     // ============================================================
     function updatePlayer(deltaTime) {
-      var player = state.player, grid = state.grid, keys = state.keys;
-      var moveDeltaX = 0, moveDeltaY = 0;
-      var facingCos = Math.cos(player.angle), facingSin = Math.sin(player.angle);
+      var player = state.player;
+      var grid = state.grid;
+      var keys = state.keys;
+      var moveDeltaX = 0;
+      var moveDeltaY = 0;
+      var facingCos = Math.cos(player.angle);
+      var facingSin = Math.sin(player.angle);
       var speed = CONFIG.playerMoveSpeed * deltaTime;
 
       // Forward/backward
@@ -1020,7 +1050,7 @@
       // Slow down video as enemy gets closer
       sendToShell({ type: 'setPlaybackRate', value: Math.max(0.2, 1.0 - proximity * 0.8) });
 
-      // Distort video when enemy is close — the "ad" glitches
+      // Distort video when enemy is close - the "ad" glitches
       if (proximity > 0.4) {
         var intensity = (proximity - 0.4) / 0.6;
         var hue = Math.sin(performance.now() / 150) * intensity * 90;
@@ -1040,18 +1070,32 @@
     // ============================================================
     function updateHUD() {
       if (!state || !state.running) return;
-      var enemy = state.enemy, player = state.player, exit = state.exit;
-      var exitDist = Math.sqrt(Math.pow(exit.x-player.x,2)+Math.pow(exit.y-player.y,2));
-      var eDist = Math.sqrt(Math.pow(enemy.x-player.x,2)+Math.pow(enemy.y-player.y,2));
+      var enemy = state.enemy, player = state.player, exitPosition = state.exit;
+
+      var distanceToExit = Math.sqrt(
+        (exitPosition.x - player.x) * (exitPosition.x - player.x) +
+        (exitPosition.y - player.y) * (exitPosition.y - player.y)
+      );
+      var distanceToEnemy = Math.sqrt(
+        (enemy.x - player.x) * (enemy.x - player.x) +
+        (enemy.y - player.y) * (enemy.y - player.y)
+      );
+
       var warning = '';
-      if (enemy.active && eDist < 3) {
-        var flash = Math.sin(performance.now()/(100+(1-eDist/3)*200)) > 0;
-        if (flash) warning = '<span style="color:#f00;font-size:14px">AD IS CLOSING IN</span><br>';
+      if (enemy.active && distanceToEnemy < 3) {
+        var urgency = 1 - distanceToEnemy / 3;
+        var isFlashing = Math.sin(performance.now() / (100 + urgency * 200)) > 0;
+        if (isFlashing) {
+          warning = '<span style="color:#f00;font-size:14px">AD IS CLOSING IN</span><br>';
+        }
       }
-      var info = '<span style="color:#aaa;font-size:11px">WASD/Arrows: move | Q/E: strafe</span><br>';
-      if (debugMode) info += '<span style="color:#0f0">Skip: '+exitDist.toFixed(1)+'m</span> | ';
-      info += '<span style="color:#f88">Time: '+state.elapsed.toFixed(1)+'s</span>';
-      hud.innerHTML = warning + info;
+
+      var hudText = '<span style="color:#aaa;font-size:11px">WASD/Arrows: move | Q/E: strafe</span><br>';
+      if (debugMode) {
+        hudText += '<span style="color:#0f0">Skip: ' + distanceToExit.toFixed(1) + 'm</span> | ';
+      }
+      hudText += '<span style="color:#f88">Time: ' + state.elapsed.toFixed(1) + 's</span>';
+      hud.innerHTML = warning + hudText;
     }
 
     // ============================================================
