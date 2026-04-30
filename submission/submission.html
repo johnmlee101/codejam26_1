@@ -113,6 +113,12 @@
       }
       /* Hide main HUD on mobile — time is shown below controls */
       #hud { display: none; }
+      #game-overlay h1 { font-size: 22px; }
+      #game-overlay .sub { font-size: 11px; }
+      #game-overlay {
+        padding: 0 40px;
+        text-align: center;
+      }
     }
   </style>
 </head>
@@ -1117,16 +1123,7 @@
       // Slow down video as enemy gets closer
       sendToShell({ type: 'setPlaybackRate', value: Math.max(0.2, 1.0 - proximity * 0.8) });
 
-      // Distort video when enemy is close - the "ad" glitches
-      if (proximity > 0.4) {
-        var intensity = (proximity - 0.4) / 0.6;
-        var hue = Math.sin(performance.now() / 150) * intensity * 90;
-        var sat = 1 + intensity * 3;
-        var bright = 1 + Math.sin(performance.now() / 100) * intensity * 0.3;
-        sendToShell({ type: 'setVideoFilter', value: 'hue-rotate('+hue.toFixed(0)+'deg) saturate('+sat.toFixed(1)+') brightness('+bright.toFixed(2)+')' });
-      } else {
-        sendToShell({ type: 'setVideoFilter', value: 'none' });
-      }
+      sendToShell({ type: 'setVideoFilter', value: 'none' });
     }
 
     // ============================================================
@@ -1150,11 +1147,8 @@
 
       var warning = '';
       if (enemy.active && distanceToEnemy < 3) {
-        var urgency = 1 - distanceToEnemy / 3;
-        var isFlashing = Math.sin(performance.now() / (100 + urgency * 200)) > 0;
-        if (isFlashing) {
-          warning = '<span style="color:#f00;font-size:14px">AD IS CLOSING IN</span><br>';
-        }
+        var warningOpacity = 0.5 + 0.5 * Math.sin(performance.now() / 500);
+        warning = '<span style="color:#f00;font-size:14px;opacity:' + warningOpacity.toFixed(2) + '">AD IS CLOSING IN</span><br>';
       }
 
       var hudText = '';
