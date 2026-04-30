@@ -210,12 +210,13 @@
     // ============================================================
     // DERIVED CONFIG (don't edit unless you know what you're doing)
     // ============================================================
+    var isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
     var MAP_DIMENSIONS = { SMALL: 8, MEDIUM: 10, LARGE: 12 };
     var mazeGridSize = MAP_DIMENSIONS[MAP_SIZE] || 10;
 
     var CONFIG = {
       fieldOfView: Math.PI / 3,
-      rayCount: 320,
+      rayCount: isTouchDevice ? 160 : 320,
       maxRenderDepth: 20,
       playerMoveSpeed: PLAYER_MOVE_SPEED,
       playerTurnSpeed: PLAYER_TURN_SPEED,
@@ -233,7 +234,6 @@
     var hud = document.getElementById('hud');
     var gameOverlay = document.getElementById('game-overlay');
     var mobileTimeDisplay = document.getElementById('mobile-time');
-    var isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
 
     // ============================================================
     // MAZE GENERATION
@@ -598,26 +598,29 @@
       ctx.fillStyle = ceilingGradient;
       ctx.fillRect(0, 0, screenWidth, screenHeight / 2);
 
-      // Perspective-correct tile grid lines on ceiling
-      var player = state.player;
-      var ceilingTileSize = 2;
-      for (var scanlineRow = 0; scanlineRow < screenHeight / 2; scanlineRow++) {
-        var scanlineDepth = screenHeight / (2 * (screenHeight / 2 - scanlineRow + 0.1));
-        var worldXLeft = player.x + Math.cos(player.angle - CONFIG.fieldOfView / 2) * scanlineDepth;
-        var worldYLeft = player.y + Math.sin(player.angle - CONFIG.fieldOfView / 2) * scanlineDepth;
-        var worldXRight = player.x + Math.cos(player.angle + CONFIG.fieldOfView / 2) * scanlineDepth;
-        var worldYRight = player.y + Math.sin(player.angle + CONFIG.fieldOfView / 2) * scanlineDepth;
-        var fogBrightness = Math.max(0, 1 - scanlineDepth / CONFIG.maxRenderDepth);
-        var gridLineAlpha = fogBrightness * 0.15;
-        for (var pixelCol = 0; pixelCol < screenWidth; pixelCol += 4) {
-          var interpolation = pixelCol / screenWidth;
-          var worldX = worldXLeft + (worldXRight - worldXLeft) * interpolation;
-          var worldY = worldYLeft + (worldYRight - worldYLeft) * interpolation;
-          var isGridLineX = Math.abs(worldX % ceilingTileSize) < 0.06 || Math.abs(worldX % ceilingTileSize - ceilingTileSize) < 0.06;
-          var isGridLineY = Math.abs(worldY % ceilingTileSize) < 0.06 || Math.abs(worldY % ceilingTileSize - ceilingTileSize) < 0.06;
-          if (isGridLineX || isGridLineY) {
-            ctx.fillStyle = 'rgba(20,20,20,' + gridLineAlpha + ')';
-            ctx.fillRect(pixelCol, scanlineRow, 4, 1);
+      // Perspective-correct tile grid lines on ceiling (skip on mobile for performance)
+      if (!isTouchDevice) {
+        var player = state.player;
+        var ceilingTileSize = 2;
+        var scanlineStep = 2; // render every other row for performance
+        for (var scanlineRow = 0; scanlineRow < screenHeight / 2; scanlineRow += scanlineStep) {
+          var scanlineDepth = screenHeight / (2 * (screenHeight / 2 - scanlineRow + 0.1));
+          var worldXLeft = player.x + Math.cos(player.angle - CONFIG.fieldOfView / 2) * scanlineDepth;
+          var worldYLeft = player.y + Math.sin(player.angle - CONFIG.fieldOfView / 2) * scanlineDepth;
+          var worldXRight = player.x + Math.cos(player.angle + CONFIG.fieldOfView / 2) * scanlineDepth;
+          var worldYRight = player.y + Math.sin(player.angle + CONFIG.fieldOfView / 2) * scanlineDepth;
+          var fogBrightness = Math.max(0, 1 - scanlineDepth / CONFIG.maxRenderDepth);
+          var gridLineAlpha = fogBrightness * 0.15;
+          for (var pixelCol = 0; pixelCol < screenWidth; pixelCol += 8) {
+            var interpolation = pixelCol / screenWidth;
+            var worldX = worldXLeft + (worldXRight - worldXLeft) * interpolation;
+            var worldY = worldYLeft + (worldYRight - worldYLeft) * interpolation;
+            var isGridLineX = Math.abs(worldX % ceilingTileSize) < 0.06 || Math.abs(worldX % ceilingTileSize - ceilingTileSize) < 0.06;
+            var isGridLineY = Math.abs(worldY % ceilingTileSize) < 0.06 || Math.abs(worldY % ceilingTileSize - ceilingTileSize) < 0.06;
+            if (isGridLineX || isGridLineY) {
+              ctx.fillStyle = 'rgba(20,20,20,' + gridLineAlpha + ')';
+              ctx.fillRect(pixelCol, scanlineRow, 8, scanlineStep);
+            }
           }
         }
       }
@@ -656,9 +659,10 @@
               ctx.fillStyle = 'rgba(' + Math.floor(20 * edgeBrightness) + ',' + Math.floor(40 * edgeBrightness) + ',' + Math.floor(100 * edgeBrightness) + ',0.5)';
               ctx.fillRect(Math.floor(rayIndex * stripWidth), wallTop, Math.ceil(stripWidth) + 1, wallHeight);
             }
-            // Dense alternating >> << skip icon pattern on walls
+            // Dense alternating >> << skip icon pattern on walls (skip on mobile)
+            if (isTouchDevice) continue;
             var texU = result.texX;
-            var iconRows = 4; // number of icon rows per wall tile
+            var iconRows = 4;
             var patternSize = wallHeight / iconRows;
             if (patternSize > 5) {
               var skipAlpha = brightness * 0.1;
