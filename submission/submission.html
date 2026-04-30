@@ -334,7 +334,7 @@
           if (side === 0) pd = (cmX - px + (1-stepX)/2) / dirX;
           else pd = (cmY - py + (1-stepY)/2) / dirY;
           var hx = px + dirX*pd, hy = py + dirY*pd;
-          return { dist: Math.abs(pd), hit: true, side: side, texX: side === 0 ? (hy%1) : (hx%1) };
+          return { dist: Math.abs(pd), hit: true, side: side, texX: side === 0 ? (hy%1) : (hx%1), mapX: cmX, mapY: cmY };
         }
       }
       return { dist: CFG.maxDepth, hit: false, side: 0 };
@@ -350,17 +350,42 @@
       var W = canvas.width, H = canvas.height;
       enemyScreenInfo = null;
 
-      // Sky
-      var skyGrad = ctx.createLinearGradient(0, 0, 0, H/2);
-      skyGrad.addColorStop(0, '#000011');
-      skyGrad.addColorStop(1, '#000033');
-      ctx.fillStyle = skyGrad;
+      // Ceiling - office drop ceiling tiles
+      var ceilGrad = ctx.createLinearGradient(0, 0, 0, H/2);
+      ceilGrad.addColorStop(0, '#707070');
+      ceilGrad.addColorStop(1, '#3a3a3a');
+      ctx.fillStyle = ceilGrad;
       ctx.fillRect(0, 0, W, H/2);
+      // Tile grid lines on ceiling
+      var player = state.player;
+      var tileSize = 2;
+      for (var row = 0; row < H/2; row++) {
+        var depth = H / (2 * (H/2 - row + 0.1));
+        var corrD = depth;
+        var worldXLeft = player.x + Math.cos(player.angle - CFG.fov/2) * corrD;
+        var worldYLeft = player.y + Math.sin(player.angle - CFG.fov/2) * corrD;
+        var worldXRight = player.x + Math.cos(player.angle + CFG.fov/2) * corrD;
+        var worldYRight = player.y + Math.sin(player.angle + CFG.fov/2) * corrD;
+        // Check for tile boundaries at this scanline
+        var fogBright = Math.max(0, 1 - corrD / CFG.maxDepth);
+        var distFade = fogBright * 0.15;
+        for (var col = 0; col < W; col += 4) {
+          var t = col / W;
+          var wx = worldXLeft + (worldXRight - worldXLeft) * t;
+          var wy = worldYLeft + (worldYRight - worldYLeft) * t;
+          var gridLineX = Math.abs(wx % tileSize) < 0.06 || Math.abs(wx % tileSize - tileSize) < 0.06;
+          var gridLineY = Math.abs(wy % tileSize) < 0.06 || Math.abs(wy % tileSize - tileSize) < 0.06;
+          if (gridLineX || gridLineY) {
+            ctx.fillStyle = 'rgba(20,20,20,'+distFade+')';
+            ctx.fillRect(col, row, 4, 1);
+          }
+        }
+      }
 
       // Floor
       var floorGrad = ctx.createLinearGradient(0, H/2, 0, H);
       floorGrad.addColorStop(0, '#111');
-      floorGrad.addColorStop(1, '#333');
+      floorGrad.addColorStop(1, '#1a1a1a');
       ctx.fillStyle = floorGrad;
       ctx.fillRect(0, H/2, W, H/2);
 
@@ -375,7 +400,7 @@
         var correctedDist = result.dist * Math.cos(rayAngle - player.angle);
         zBuffer[i] = correctedDist;
         if (result.hit) {
-          var wallHeight = (H / correctedDist) * 0.8;
+          var wallHeight = (H / correctedDist) * 1.0;
           var wallTop = (H - wallHeight) / 2;
           var brightness = Math.max(0, 1 - correctedDist / CFG.maxDepth);
           if (result.side === 1) brightness *= 0.7;
@@ -387,6 +412,47 @@
               var eb = brightness * 0.3;
               ctx.fillStyle = 'rgba('+Math.floor(20*eb)+','+Math.floor(40*eb)+','+Math.floor(100*eb)+',0.5)';
               ctx.fillRect(Math.floor(i*stripWidth), wallTop, Math.ceil(stripWidth)+1, wallHeight);
+            }
+            // Subtle skip icon ">>" pattern on walls, random orientation per wall tile
+            var texU = result.texX;
+            var patternSize = wallHeight / 3;
+            if (patternSize > 6) {
+              var skipAlpha = brightness * 0.12;
+              var sx = Math.floor(i * stripWidth);
+              // Pseudo-random hash from wall grid position
+              var wallSeed = (result.mapX * 7919 + result.mapY * 104729) | 0;
+              for (var py = 0; py < 3; py++) {
+                var iconTop = wallTop + py * patternSize + patternSize * 0.15;
+                var iconH = patternSize * 0.7;
+                var iconCenterY = iconTop + iconH / 2;
+                // Per-icon random orientation using wall pos + row
+                var iconSeed = ((wallSeed + py * 31337) * 48611) | 0;
+                var flipped = (iconSeed & 1) === 1; // horizontal flip
+                var vertFlip = (iconSeed & 2) === 2; // vertical flip
+                for (var tri = 0; tri < 2; tri++) {
+                  var triLeft = 0.15 + tri * 0.3;
+                  var triRight = 0.45 + tri * 0.3;
+                  var u = flipped ? (1 - texU) : texU;
+                  if (u >= triLeft && u <= triRight) {
+                    var progress = (u - triLeft) / (triRight - triLeft);
+                    var halfSpan = (1 - progress) * iconH / 2;
+                    var stripTop, stripBot;
+                    if (vertFlip) {
+                      stripTop = iconCenterY - halfSpan * 0.3;
+                      stripBot = iconCenterY + halfSpan;
+                    } else {
+                      stripTop = iconCenterY - halfSpan;
+                      stripBot = iconCenterY + halfSpan * 0.3;
+                    }
+                    if (stripTop < wallTop) stripTop = wallTop;
+                    if (stripBot > wallTop + wallHeight) stripBot = wallTop + wallHeight;
+                    if (stripBot > stripTop) {
+                      ctx.fillStyle = 'rgba(100,180,255,'+skipAlpha+')';
+                      ctx.fillRect(sx, stripTop, Math.ceil(stripWidth)+1, stripBot - stripTop);
+                    }
+                  }
+                }
+              }
             }
           }
         }
@@ -841,6 +907,39 @@
     window.addEventListener('keyup', function(e) {
       if (!state) return;
       state.keys[e.key.toLowerCase()] = false;
+    });
+
+    // ============================================================
+    // PAUSE ON FOCUS LOSS
+    // ============================================================
+    var paused = false;
+    var wasRunning = false;
+
+    function pauseGame() {
+      if (!state || !state.running || paused) return;
+      paused = true;
+      wasRunning = true;
+      state.running = false;
+      state.keys = {};
+      shellMsg({ type: 'pause' });
+      gameOverlay.classList.remove('hidden');
+      gameOverlay.innerHTML = '<h1 style="font-size:28px">PAUSED</h1><div class="sub">Click to resume</div>';
+    }
+
+    function resumeGame() {
+      if (!paused || !wasRunning) return;
+      paused = false;
+      wasRunning = false;
+      state.running = true;
+      shellMsg({ type: 'play' });
+      gameOverlay.classList.add('hidden');
+    }
+
+    window.addEventListener('blur', pauseGame);
+    document.addEventListener('mouseleave', pauseGame);
+
+    document.addEventListener('click', function() {
+      if (paused) resumeGame();
     });
 
     // ============================================================
