@@ -13,15 +13,15 @@
       overflow: hidden;
     }
     #overlay-container {
-      width: 640px;
-      height: 480px;
+      width: 960px;
+      height: 540px;
       position: relative;
       max-width: 100vw;
     }
     #gameCanvas {
       display: block;
-      width: 640px;
-      height: 480px;
+      width: 960px;
+      height: 540px;
       max-width: 100vw;
     }
     #minimap {
@@ -140,7 +140,7 @@
 </head>
 <body>
   <div id="overlay-container">
-    <canvas id="gameCanvas" width="640" height="480"></canvas>
+    <canvas id="gameCanvas" width="960" height="540"></canvas>
     <canvas id="minimap" width="140" height="140"></canvas>
     <div id="hud"></div>
     <div id="mobile-time"></div>
@@ -726,7 +726,7 @@
       var enemyScreenX = screenWidth / 2 + (angleDifference / (CONFIG.fieldOfView / 2)) * (screenWidth / 2);
       var correctedDist = distanceToEnemy * Math.cos(angleDifference);
       var cutoutHeight = (screenHeight / correctedDist) * CONFIG.enemyDisplayScale;
-      var cutoutWidth = cutoutHeight * (4 / 3);
+      var cutoutWidth = cutoutHeight * (16 / 9);
       var cutoutTop = (screenHeight - cutoutHeight) / 2;
 
       var rayStripWidth = screenWidth / CONFIG.rayCount;
