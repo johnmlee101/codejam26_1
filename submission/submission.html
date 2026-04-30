@@ -77,9 +77,64 @@
       window.top.postMessage({ type: 'success' }, '*');
     }
 
-    function shellMsg(msg) {
-      window.top.postMessage(msg, '*');
+    function sendToShell(message) {
+      window.top.postMessage(message, '*');
     }
+
+    // ============================================================
+    // TUNING PARAMETERS
+    // Change these to adjust the game feel
+    // ============================================================
+
+    // Map size: 'SMALL' (8x8), 'MEDIUM' (10x10), 'LARGE' (12x12)
+    // Tip: Cmd/Ctrl + Shift + Click on start to enable debug mode (shows minimap + skip distance)
+    var MAP_SIZE = 'MEDIUM';
+
+    // How big the enemy video cutout appears (higher = bigger)
+    var ENEMY_DISPLAY_SCALE = 0.9;
+
+    // Enemy movement speed (tiles per second)
+    var ENEMY_MOVE_SPEED = 1.4;
+
+    // Seconds before the enemy starts chasing
+    var ENEMY_ACTIVATION_DELAY = 3;
+
+    // Player movement speed (tiles per second)
+    var PLAYER_MOVE_SPEED = 2.5;
+
+    // Player rotation speed (radians per second)
+    var PLAYER_TURN_SPEED = 2.2;
+
+    // Volume when enemy is at max distance (0 to 1)
+    var VOLUME_MINIMUM = 0.05;
+
+    // Volume when enemy is right next to you (0 to 1)
+    var VOLUME_MAXIMUM = 1.0;
+
+    // How quickly volume ramps up with proximity (1 = linear, 2 = quadratic, 3 = cubic)
+    var VOLUME_FALLOFF_CURVE = 2;
+
+    // Max distance at which enemy audio is audible (in tiles)
+    var VOLUME_HEARING_RANGE = 14;
+
+    // ============================================================
+    // DERIVED CONFIG (don't edit unless you know what you're doing)
+    // ============================================================
+    var MAP_DIMENSIONS = { SMALL: 8, MEDIUM: 10, LARGE: 12 };
+    var mazeGridSize = MAP_DIMENSIONS[MAP_SIZE] || 10;
+
+    var CONFIG = {
+      fieldOfView: Math.PI / 3,
+      rayCount: 320,
+      maxRenderDepth: 20,
+      playerMoveSpeed: PLAYER_MOVE_SPEED,
+      playerTurnSpeed: PLAYER_TURN_SPEED,
+      enemyMoveSpeed: ENEMY_MOVE_SPEED,
+      enemyActivationDelay: ENEMY_ACTIVATION_DELAY,
+      enemyDisplayScale: ENEMY_DISPLAY_SCALE,
+    };
+
+    // ============================================================
 
     var canvas = document.getElementById('gameCanvas');
     var ctx = canvas.getContext('2d');
@@ -88,18 +143,13 @@
     var hud = document.getElementById('hud');
     var gameOverlay = document.getElementById('game-overlay');
 
-    var CFG = {
-      fov: Math.PI / 3,
-      rayCount: 320,
-      maxDepth: 20,
-      moveSpeed: 2.5,
-      rotSpeed: 2.2,
-      enemySpeed: 1.4,
-      enemySpawnDelay: 3,
-    };
-
     // ============================================================
-    // MAZE GENERATION (Recursive Backtracker)
+    // MAZE GENERATION
+    // Uses a recursive backtracker to carve a perfect maze, then
+    // breaks ~35% of interior walls to create loops (prevents
+    // simple wall-following). Long edge corridors get pillars
+    // added, with a flood-fill solvability check after each one.
+    // Returns a 2D tile grid where 1=wall, 0=open.
     // ============================================================
     function generateMaze(cols, rows) {
       var cells = [];
@@ -225,11 +275,14 @@
 
     // ============================================================
     // GAME STATE
+    // Initializes the maze, player, enemy, exit, and teleporters.
+    // Player spawns top-left facing an open direction. Enemy spawns
+    // on a reachable cell in the farthest 25% from the player.
     // ============================================================
     var state = null;
 
     function initGame() {
-      var maze = generateMaze(10, 10);
+      var maze = generateMaze(mazeGridSize, mazeGridSize);
       var grid = maze.grid, gridW = maze.gridW, gridH = maze.gridH;
 
       var spawnDirs = [
@@ -288,6 +341,9 @@
 
     // ============================================================
     // BFS PATHFINDING
+    // Breadth-first search on the tile grid. Used by the enemy AI
+    // to find the shortest path to the player (or a point in front
+    // of the player). Returns an array of waypoint coordinates.
     // ============================================================
     function bfs(grid, sx, sy, ex, ey) {
       var startX = Math.floor(sx), startY = Math.floor(sy);
@@ -314,6 +370,10 @@
 
     // ============================================================
     // DDA RAYCASTING
+    // Digital Differential Analyzer algorithm for fast, accurate
+    // raycasting. Steps through grid cells along the ray direction
+    // and returns the perpendicular distance to the first wall hit,
+    // which side was hit (for shading), and texture coordinate.
     // ============================================================
     function castRayDDA(px, py, angle, grid) {
       var dirX = Math.cos(angle), dirY = Math.sin(angle);
@@ -337,13 +397,18 @@
           return { dist: Math.abs(pd), hit: true, side: side, texX: side === 0 ? (hy%1) : (hx%1), mapX: cmX, mapY: cmY };
         }
       }
-      return { dist: CFG.maxDepth, hit: false, side: 0 };
+      return { dist: CONFIG.maxRenderDepth, hit: false, side: 0 };
     }
 
     // ============================================================
-    // RENDERING - Enemy is a hole showing the parent video through
+    // RENDERING
+    // Draws the first-person view: ceiling with office tile grid
+    // lines, floor gradient, raycasted walls with skip-icon
+    // textures, teleporter/exit sprites, and the enemy cutout.
+    // The enemy is rendered by cutting a hole in the canvas with
+    // destination-out compositing, letting the parent shell's
+    // video show through — the ad itself becomes the enemy.
     // ============================================================
-    // Track enemy screen position for the cutout
     var enemyScreenInfo = null;
 
     function render() {
@@ -362,12 +427,12 @@
       for (var row = 0; row < H/2; row++) {
         var depth = H / (2 * (H/2 - row + 0.1));
         var corrD = depth;
-        var worldXLeft = player.x + Math.cos(player.angle - CFG.fov/2) * corrD;
-        var worldYLeft = player.y + Math.sin(player.angle - CFG.fov/2) * corrD;
-        var worldXRight = player.x + Math.cos(player.angle + CFG.fov/2) * corrD;
-        var worldYRight = player.y + Math.sin(player.angle + CFG.fov/2) * corrD;
+        var worldXLeft = player.x + Math.cos(player.angle - CONFIG.fieldOfView/2) * corrD;
+        var worldYLeft = player.y + Math.sin(player.angle - CONFIG.fieldOfView/2) * corrD;
+        var worldXRight = player.x + Math.cos(player.angle + CONFIG.fieldOfView/2) * corrD;
+        var worldYRight = player.y + Math.sin(player.angle + CONFIG.fieldOfView/2) * corrD;
         // Check for tile boundaries at this scanline
-        var fogBright = Math.max(0, 1 - corrD / CFG.maxDepth);
+        var fogBright = Math.max(0, 1 - corrD / CONFIG.maxRenderDepth);
         var distFade = fogBright * 0.15;
         for (var col = 0; col < W; col += 4) {
           var t = col / W;
@@ -390,19 +455,19 @@
       ctx.fillRect(0, H/2, W, H/2);
 
       var player = state.player, grid = state.grid, enemy = state.enemy, exit = state.exit;
-      var halfFov = CFG.fov / 2;
-      var stripWidth = W / CFG.rayCount;
+      var halfFov = CONFIG.fieldOfView / 2;
+      var stripWidth = W / CONFIG.rayCount;
       var zBuffer = [];
 
-      for (var i = 0; i < CFG.rayCount; i++) {
-        var rayAngle = player.angle - halfFov + (i / CFG.rayCount) * CFG.fov;
+      for (var i = 0; i < CONFIG.rayCount; i++) {
+        var rayAngle = player.angle - halfFov + (i / CONFIG.rayCount) * CONFIG.fieldOfView;
         var result = castRayDDA(player.x, player.y, rayAngle, grid);
         var correctedDist = result.dist * Math.cos(rayAngle - player.angle);
         zBuffer[i] = correctedDist;
         if (result.hit) {
           var wallHeight = (H / correctedDist) * 1.0;
           var wallTop = (H - wallHeight) / 2;
-          var brightness = Math.max(0, 1 - correctedDist / CFG.maxDepth);
+          var brightness = Math.max(0, 1 - correctedDist / CONFIG.maxRenderDepth);
           if (result.side === 1) brightness *= 0.7;
           ctx.fillStyle = 'rgb('+Math.floor(40*brightness)+','+Math.floor(80*brightness)+','+Math.floor(160*brightness)+')';
           ctx.fillRect(Math.floor(i*stripWidth), wallTop, Math.ceil(stripWidth)+1, wallHeight);
@@ -413,37 +478,29 @@
               ctx.fillStyle = 'rgba('+Math.floor(20*eb)+','+Math.floor(40*eb)+','+Math.floor(100*eb)+',0.5)';
               ctx.fillRect(Math.floor(i*stripWidth), wallTop, Math.ceil(stripWidth)+1, wallHeight);
             }
-            // Subtle skip icon ">>" pattern on walls, random orientation per wall tile
+            // Dense alternating >> << skip icon pattern on walls
             var texU = result.texX;
-            var patternSize = wallHeight / 3;
-            if (patternSize > 6) {
-              var skipAlpha = brightness * 0.12;
+            var iconRows = 4; // number of icon rows per wall tile
+            var patternSize = wallHeight / iconRows;
+            if (patternSize > 5) {
+              var skipAlpha = brightness * 0.1;
               var sx = Math.floor(i * stripWidth);
-              // Pseudo-random hash from wall grid position
-              var wallSeed = (result.mapX * 7919 + result.mapY * 104729) | 0;
-              for (var py = 0; py < 3; py++) {
-                var iconTop = wallTop + py * patternSize + patternSize * 0.15;
-                var iconH = patternSize * 0.7;
+              for (var row = 0; row < iconRows; row++) {
+                var iconTop = wallTop + row * patternSize + patternSize * 0.1;
+                var iconH = patternSize * 0.8;
                 var iconCenterY = iconTop + iconH / 2;
-                // Per-icon random orientation using wall pos + row
-                var iconSeed = ((wallSeed + py * 31337) * 48611) | 0;
-                var flipped = (iconSeed & 1) === 1; // horizontal flip
-                var vertFlip = (iconSeed & 2) === 2; // vertical flip
-                for (var tri = 0; tri < 2; tri++) {
-                  var triLeft = 0.15 + tri * 0.3;
-                  var triRight = 0.45 + tri * 0.3;
-                  var u = flipped ? (1 - texU) : texU;
-                  if (u >= triLeft && u <= triRight) {
-                    var progress = (u - triLeft) / (triRight - triLeft);
+                // Alternate direction each row: even=>> odd=<<
+                var flipped = (row % 2 === 1);
+                var u = flipped ? (1 - texU) : texU;
+                // Two chevrons per cell: first at 0.1-0.4, second at 0.5-0.8
+                for (var chevron = 0; chevron < 2; chevron++) {
+                  var chevronLeft = 0.1 + chevron * 0.4;
+                  var chevronRight = 0.4 + chevron * 0.4;
+                  if (u >= chevronLeft && u <= chevronRight) {
+                    var progress = (u - chevronLeft) / (chevronRight - chevronLeft);
                     var halfSpan = (1 - progress) * iconH / 2;
-                    var stripTop, stripBot;
-                    if (vertFlip) {
-                      stripTop = iconCenterY - halfSpan * 0.3;
-                      stripBot = iconCenterY + halfSpan;
-                    } else {
-                      stripTop = iconCenterY - halfSpan;
-                      stripBot = iconCenterY + halfSpan * 0.3;
-                    }
+                    var stripTop = iconCenterY - halfSpan;
+                    var stripBot = iconCenterY + halfSpan;
                     if (stripTop < wallTop) stripTop = wallTop;
                     if (stripBot > wallTop + wallHeight) stripBot = wallTop + wallHeight;
                     if (stripBot > stripTop) {
@@ -483,17 +540,17 @@
       var angleDiff = spriteAngle - player.angle;
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
       while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-      if (Math.abs(angleDiff) > CFG.fov / 2 + 0.1) return;
+      if (Math.abs(angleDiff) > CONFIG.fieldOfView / 2 + 0.1) return;
 
-      var screenX = W/2 + (angleDiff / (CFG.fov/2)) * (W/2);
+      var screenX = W/2 + (angleDiff / (CONFIG.fieldOfView/2)) * (W/2);
       var correctedDist = dist * Math.cos(angleDiff);
-      var spriteHeight = (H / correctedDist) * 0.6;
+      var spriteHeight = (H / correctedDist) * CONFIG.enemyDisplayScale;
       var spriteWidth = spriteHeight * (4/3); // match 640x480 aspect ratio
       var screenY = (H - spriteHeight) / 2;
 
-      var stripW = W / CFG.rayCount;
+      var stripW = W / CONFIG.rayCount;
       var startStrip = Math.max(0, Math.floor((screenX - spriteWidth/2) / stripW));
-      var endStrip = Math.min(CFG.rayCount-1, Math.floor((screenX + spriteWidth/2) / stripW));
+      var endStrip = Math.min(CONFIG.rayCount-1, Math.floor((screenX + spriteWidth/2) / stripW));
 
       // Per-strip occlusion check
       var hasVisible = false;
@@ -567,14 +624,14 @@
       var angleDiff = spriteAngle - player.angle;
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
       while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-      if (Math.abs(angleDiff) > CFG.fov / 2 + 0.1) return;
-      var screenX = W/2 + (angleDiff / (CFG.fov/2)) * (W/2);
+      if (Math.abs(angleDiff) > CONFIG.fieldOfView / 2 + 0.1) return;
+      var screenX = W/2 + (angleDiff / (CONFIG.fieldOfView/2)) * (W/2);
       var correctedDist = dist * Math.cos(angleDiff);
       var spriteHeight = (H / correctedDist) * size;
       var spriteWidth = spriteHeight * 0.8;
       var screenY = (H - spriteHeight) / 2;
-      var startStrip = Math.max(0, Math.floor((screenX - spriteWidth/2) / (W/CFG.rayCount)));
-      var endStrip = Math.min(CFG.rayCount-1, Math.floor((screenX + spriteWidth/2) / (W/CFG.rayCount)));
+      var startStrip = Math.max(0, Math.floor((screenX - spriteWidth/2) / (W/CONFIG.rayCount)));
+      var endStrip = Math.min(CONFIG.rayCount-1, Math.floor((screenX + spriteWidth/2) / (W/CONFIG.rayCount)));
       var visible = false;
       for (var i = startStrip; i <= endStrip; i++) {
         if (zBuffer[i] > correctedDist) { visible = true; break; }
@@ -621,6 +678,9 @@
 
     // ============================================================
     // MINIMAP
+    // Top-down debug view showing walls, player position/direction,
+    // enemy position, exit, and teleporters. Only rendered when
+    // debug mode is active (Cmd/Ctrl + Shift + Click to start).
     // ============================================================
     function renderMinimap() {
       if (!debugMode) return;
@@ -668,11 +728,16 @@
 
     // ============================================================
     // ENEMY AI
+    // Uses BFS pathfinding to chase the player. When close (<5
+    // tiles), targets a point in front of the player's face to
+    // block their view. Speed varies: slower on corners, faster
+    // on long straights. Acts as a wall — pushes the player back
+    // on contact without clipping them into walls.
     // ============================================================
     function updateEnemy(dt) {
       var enemy = state.enemy, player = state.player, grid = state.grid;
       if (!enemy.active) {
-        if (state.elapsed > CFG.enemySpawnDelay) enemy.active = true;
+        if (state.elapsed > CONFIG.enemyActivationDelay) enemy.active = true;
         return;
       }
       enemy.pathRecalcTimer -= dt;
@@ -710,7 +775,7 @@
             else break;
           }
           var speedMult = 0.6 + Math.min(straightCount-1, 4) * 0.4;
-          var speed = CFG.enemySpeed * speedMult * dt;
+          var speed = CONFIG.enemyMoveSpeed * speedMult * dt;
           enemy.x += (dx/dist)*speed;
           enemy.y += (dy/dist)*speed;
         }
@@ -735,17 +800,21 @@
 
     // ============================================================
     // PLAYER MOVEMENT
+    // WASD/Arrow key movement with wall-sliding collision.
+    // Q/E for strafing. Checks teleporter proximity for warping
+    // between linked portals (with cooldown). Triggers win state
+    // when the player reaches the exit marker.
     // ============================================================
     function updatePlayer(dt) {
       var player = state.player, grid = state.grid, keys = state.keys;
       var moveX = 0, moveY = 0;
       var cos = Math.cos(player.angle), sin = Math.sin(player.angle);
-      if (keys['w'] || keys['arrowup']) { moveX += cos*CFG.moveSpeed*dt; moveY += sin*CFG.moveSpeed*dt; }
-      if (keys['s'] || keys['arrowdown']) { moveX -= cos*CFG.moveSpeed*dt; moveY -= sin*CFG.moveSpeed*dt; }
-      if (keys['q']) { moveX += Math.cos(player.angle-Math.PI/2)*CFG.moveSpeed*dt; moveY += Math.sin(player.angle-Math.PI/2)*CFG.moveSpeed*dt; }
-      if (keys['e']) { moveX += Math.cos(player.angle+Math.PI/2)*CFG.moveSpeed*dt; moveY += Math.sin(player.angle+Math.PI/2)*CFG.moveSpeed*dt; }
-      if (keys['a'] || keys['arrowleft']) player.angle -= CFG.rotSpeed * dt;
-      if (keys['d'] || keys['arrowright']) player.angle += CFG.rotSpeed * dt;
+      if (keys['w'] || keys['arrowup']) { moveX += cos*CONFIG.playerMoveSpeed*dt; moveY += sin*CONFIG.playerMoveSpeed*dt; }
+      if (keys['s'] || keys['arrowdown']) { moveX -= cos*CONFIG.playerMoveSpeed*dt; moveY -= sin*CONFIG.playerMoveSpeed*dt; }
+      if (keys['q']) { moveX += Math.cos(player.angle-Math.PI/2)*CONFIG.playerMoveSpeed*dt; moveY += Math.sin(player.angle-Math.PI/2)*CONFIG.playerMoveSpeed*dt; }
+      if (keys['e']) { moveX += Math.cos(player.angle+Math.PI/2)*CONFIG.playerMoveSpeed*dt; moveY += Math.sin(player.angle+Math.PI/2)*CONFIG.playerMoveSpeed*dt; }
+      if (keys['a'] || keys['arrowleft']) player.angle -= CONFIG.playerTurnSpeed * dt;
+      if (keys['d'] || keys['arrowright']) player.angle += CONFIG.playerTurnSpeed * dt;
       while (player.angle > Math.PI*2) player.angle -= Math.PI*2;
       while (player.angle < 0) player.angle += Math.PI*2;
       var margin = 0.15;
@@ -784,7 +853,10 @@
     }
 
     // ============================================================
-    // AUDIO (oscillator-based, no external files)
+    // AUDIO
+    // Teleport sound effect generated via Web Audio API (no
+    // external files). Enemy audio is handled by adjusting the
+    // parent shell's video volume based on enemy proximity.
     // ============================================================
     var audioCtx = null, teleportSfxBuffer = null;
 
@@ -807,26 +879,31 @@
 
     function updateAudio() {
       if (!state || !state.running || !state.enemy.active) {
-        shellMsg({ type: 'setVolume', value: 0.05 });
+        sendToShell({ type: 'setVolume', value: 0.05 });
         return;
       }
       var player = state.player, enemy = state.enemy;
       var dx = enemy.x-player.x, dy = enemy.y-player.y;
       var dist = Math.sqrt(dx*dx+dy*dy);
       // Volume: louder when enemy is closer (quadratic), min 0.05 so you always hear a hint
-      var proximity = Math.max(0, 1 - dist / 14);
-      var volume = 0.05 + proximity * proximity * 0.95;
-      shellMsg({ type: 'setVolume', value: volume });
+      var proximity = Math.max(0, 1 - dist / VOLUME_HEARING_RANGE);
+      var curve = Math.pow(proximity, VOLUME_FALLOFF_CURVE);
+      var volume = VOLUME_MINIMUM + curve * (VOLUME_MAXIMUM - VOLUME_MINIMUM);
+      sendToShell({ type: 'setVolume', value: volume });
     }
 
     // ============================================================
-    // VIDEO EFFECTS (mess with the shell's video)
+    // VIDEO EFFECTS
+    // Manipulates the parent shell's video via postMessage as the
+    // enemy gets closer: playback slows down and CSS filters
+    // (hue-rotate, saturate, brightness) create a glitch effect.
+    // Resets to normal when the enemy is far away or on win.
     // ============================================================
     function updateVideoEffects() {
       if (!state || !state.running) return;
       var enemy = state.enemy, player = state.player;
       if (!enemy.active) {
-        shellMsg({ type: 'setVideoFilter', value: 'none' });
+        sendToShell({ type: 'setVideoFilter', value: 'none' });
         return;
       }
       var dx = enemy.x-player.x, dy = enemy.y-player.y;
@@ -834,7 +911,7 @@
       var proximity = Math.max(0, 1 - dist / 8);
 
       // Slow down video as enemy gets closer
-      shellMsg({ type: 'setPlaybackRate', value: Math.max(0.2, 1.0 - proximity * 0.8) });
+      sendToShell({ type: 'setPlaybackRate', value: Math.max(0.2, 1.0 - proximity * 0.8) });
 
       // Distort video when enemy is close — the "ad" glitches
       if (proximity > 0.4) {
@@ -842,14 +919,17 @@
         var hue = Math.sin(performance.now() / 150) * intensity * 90;
         var sat = 1 + intensity * 3;
         var bright = 1 + Math.sin(performance.now() / 100) * intensity * 0.3;
-        shellMsg({ type: 'setVideoFilter', value: 'hue-rotate('+hue.toFixed(0)+'deg) saturate('+sat.toFixed(1)+') brightness('+bright.toFixed(2)+')' });
+        sendToShell({ type: 'setVideoFilter', value: 'hue-rotate('+hue.toFixed(0)+'deg) saturate('+sat.toFixed(1)+') brightness('+bright.toFixed(2)+')' });
       } else {
-        shellMsg({ type: 'setVideoFilter', value: 'none' });
+        sendToShell({ type: 'setVideoFilter', value: 'none' });
       }
     }
 
     // ============================================================
     // HUD
+    // Shows controls hint, elapsed time, and a flashing "AD
+    // BLOCKING YOUR PATH" warning when the enemy is within 3
+    // tiles. Skip distance is only shown in debug mode.
     // ============================================================
     function updateHUD() {
       if (!state || !state.running) return;
@@ -869,6 +949,9 @@
 
     // ============================================================
     // GAME LOOP
+    // Runs every frame via requestAnimationFrame. Updates player,
+    // enemy, audio, and video effects when running. On win,
+    // resets video filters and sends adSuccess to the shell.
     // ============================================================
     var lastTime = 0;
 
@@ -889,8 +972,8 @@
       }
       if (state && state.won && !state.endShown) {
         state.endShown = true;
-        shellMsg({ type: 'setVideoFilter', value: 'none' });
-        shellMsg({ type: 'setPlaybackRate', value: 1 });
+        sendToShell({ type: 'setVideoFilter', value: 'none' });
+        sendToShell({ type: 'setPlaybackRate', value: 1 });
         adSuccess();
       }
       requestAnimationFrame(gameLoop);
@@ -898,6 +981,8 @@
 
     // ============================================================
     // INPUT
+    // Keyboard handlers for movement. Prevents default on arrow
+    // keys to stop page scrolling.
     // ============================================================
     window.addEventListener('keydown', function(e) {
       if (!state) return;
@@ -911,6 +996,9 @@
 
     // ============================================================
     // PAUSE ON FOCUS LOSS
+    // Pauses the game and the parent video when the iframe loses
+    // focus or the mouse leaves the game area. Shows a "PAUSED"
+    // overlay. Click inside to resume.
     // ============================================================
     var paused = false;
     var wasRunning = false;
@@ -921,7 +1009,7 @@
       wasRunning = true;
       state.running = false;
       state.keys = {};
-      shellMsg({ type: 'pause' });
+      sendToShell({ type: 'pause' });
       gameOverlay.classList.remove('hidden');
       gameOverlay.innerHTML = '<h1 style="font-size:28px">PAUSED</h1><div class="sub">Click to resume</div>';
     }
@@ -931,7 +1019,7 @@
       paused = false;
       wasRunning = false;
       state.running = true;
-      shellMsg({ type: 'play' });
+      sendToShell({ type: 'play' });
       gameOverlay.classList.add('hidden');
     }
 
@@ -944,6 +1032,9 @@
 
     // ============================================================
     // SHELL MESSAGES
+    // Listens for postMessage events from the parent game shell.
+    // 'adStarted' triggers the click-to-start flow.
+    // 'adFinished' calls fail if the player hasn't escaped yet.
     // ============================================================
     var adReady = false;
 
@@ -986,6 +1077,8 @@
 
     // ============================================================
     // INIT
+    // Pre-generate a maze so it's ready when the player clicks,
+    // and kick off the render loop.
     // ============================================================
     initGame();
     requestAnimationFrame(gameLoop);
