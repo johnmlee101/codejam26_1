@@ -117,6 +117,9 @@
     // Max distance at which enemy audio is audible (in tiles)
     var VOLUME_HEARING_RANGE = 14;
 
+    // If true, touching the enemy fails the ad (game over). If false, enemy just blocks your path.
+    var ENEMY_CONTACT_FAILS = true;
+
     // ============================================================
     // DERIVED CONFIG (don't edit unless you know what you're doing)
     // ============================================================
@@ -780,21 +783,28 @@
           enemy.y += (dy/dist)*speed;
         }
       }
-      // Push player (not into walls)
+      // Enemy contact: either fail the ad or push the player back
       var dx = enemy.x-player.x, dy = enemy.y-player.y;
       var dist = Math.sqrt(dx*dx+dy*dy);
-      var blockR = 0.5, margin = 0.15;
-      if (dist < blockR && dist > 0.001) {
-        var pd = blockR - dist;
-        var px = -(dx/dist)*pd, py = -(dy/dist)*pd;
-        var nx = player.x + px;
-        if (!isWall(grid,nx+margin,player.y) && !isWall(grid,nx-margin,player.y) &&
-            !isWall(grid,nx+margin,player.y+margin) && !isWall(grid,nx-margin,player.y-margin))
-          player.x = nx;
-        var ny = player.y + py;
-        if (!isWall(grid,player.x,ny+margin) && !isWall(grid,player.x,ny-margin) &&
-            !isWall(grid,player.x+margin,ny+margin) && !isWall(grid,player.x-margin,ny-margin))
-          player.y = ny;
+      var blockRadius = 0.5, collisionMargin = 0.15;
+      if (dist < blockRadius && dist > 0.001) {
+        if (ENEMY_CONTACT_FAILS) {
+          state.running = false;
+          sendToShell({ type: 'setVideoFilter', value: 'none' });
+          sendToShell({ type: 'setPlaybackRate', value: 1 });
+          window.top.postMessage({ type: 'fail' }, '*');
+          return;
+        }
+        var pushDistance = blockRadius - dist;
+        var pushX = -(dx/dist)*pushDistance, pushY = -(dy/dist)*pushDistance;
+        var newPlayerX = player.x + pushX;
+        if (!isWall(grid,newPlayerX+collisionMargin,player.y) && !isWall(grid,newPlayerX-collisionMargin,player.y) &&
+            !isWall(grid,newPlayerX+collisionMargin,player.y+collisionMargin) && !isWall(grid,newPlayerX-collisionMargin,player.y-collisionMargin))
+          player.x = newPlayerX;
+        var newPlayerY = player.y + pushY;
+        if (!isWall(grid,player.x,newPlayerY+collisionMargin) && !isWall(grid,player.x,newPlayerY-collisionMargin) &&
+            !isWall(grid,player.x+collisionMargin,newPlayerY+collisionMargin) && !isWall(grid,player.x-collisionMargin,newPlayerY-collisionMargin))
+          player.y = newPlayerY;
       }
     }
 
