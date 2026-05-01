@@ -161,7 +161,7 @@
       <div id="touch-left" class="touch-btn" data-key="a">&#9664;</div>
       <div id="touch-right" class="touch-btn" data-key="d">&#9654;</div>
     </div>
-    <div id="version-tag">v4</div>
+    <div id="version-tag">v5</div>
     <div id="game-overlay">
       <div class="text-backdrop">
         <h1>Looking to skip the ad?</h1>
@@ -229,8 +229,8 @@
     var mazeGridSize = MAP_DIMENSIONS[MAP_SIZE] || 10;
 
     var CONFIG = {
-      fieldOfView: Math.PI / 3,
-      rayCount: isTouchDevice ? 160 : 320,
+      fieldOfView: isTouchDevice ? (Math.PI / 2.2) : (Math.PI / 3),
+      rayCount: isTouchDevice ? 200 : 320,
       maxRenderDepth: 20,
       playerMoveSpeed: PLAYER_MOVE_SPEED,
       playerTurnSpeed: PLAYER_TURN_SPEED,
